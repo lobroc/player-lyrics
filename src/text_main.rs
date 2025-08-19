@@ -1,18 +1,23 @@
 mod geniusgetter;
 mod musicfinder;
+mod user_interface;
 mod utils;
 
 use musicfinder::{MprisReader, Song};
 use std::error::Error;
 use std::time::Duration;
 
+use crate::user_interface::text_interface::TextInterface;
+use crate::user_interface::user_interface::UserInterface;
+
 fn main() -> Result<(), Box<dyn Error>> {
-    let mr: MprisReader = MprisReader::new()?;
-    println!("Reading from player: {}", mr.get_player_name());
+    let mr = MprisReader::new()?;
+    let mut iface = TextInterface::new();
+
+    iface.show_player(&mr);
+
     let mut last_song = String::new(); // Dummy value
     let mut lyrics = String::new();
-    let mut shown_lines: usize = 0;
-    let mut last_shown_line: String = String::new();
 
     // Infinite loop
     loop {
@@ -25,15 +30,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if last_song != songinfo.title {
+            iface.clear();
+
             let artists: Vec<String> = mr.get_all_artists()?;
 
-            let mut playing_status_str: String =
-                format!("Now playing: {} by {}", songinfo.title, songinfo.artist);
-            for a in artists[1..].iter() {
-                playing_status_str.push_str(&format!("and {}", a));
-            }
-            last_song = songinfo.title.clone();
-            println!("{}", playing_status_str);
+            last_song = iface.display_song(&songinfo, &artists)?;
 
             let url: String = geniusgetter::build_url(artists.clone(), &songinfo.title, false);
             println!("Getting lyrics from: {}", url);
@@ -61,18 +62,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             // Here, we update current lyrics
             let [playback_pos, length] = mr.song_progress()?;
             let verses: Vec<&str> = lyrics.lines().collect();
-            let mut verses_cleaned: Vec<&str> = vec![];
-            for v in verses {
-                let firstchar: char = match v.chars().next() {
-                    Some(c) => c,
-                    None => {
-                        continue;
-                    }
-                };
-                if !(firstchar == '[' || firstchar == '(' || firstchar == ')') {
-                    verses_cleaned.push(v);
-                }
-            }
+            let verses_cleaned: Vec<&str> = utils::genius_lyrics_cleaner(verses);
 
             let mut position: usize;
             match length {
@@ -87,19 +77,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         * verses_cleaned.len() as f32) as usize;
                 }
             }
-            for idx in shown_lines..=position {
-                let fetched_verse: &str = match verses_cleaned.get(idx) {
-                    Some(s) => s,
-                    None => {
-                        continue;
-                    }
-                };
-                if fetched_verse != last_shown_line {
-                    println!("{}", fetched_verse);
-                    last_shown_line = fetched_verse.to_string();
-                }
-            }
-            shown_lines = position;
+            iface.display_verse(&verses_cleaned, position);
         }
     }
 }

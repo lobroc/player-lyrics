@@ -71,11 +71,14 @@ impl MprisReader {
     }
 
     pub fn song_progress(&self) -> Result<[Duration; 2], mpris::DBusError> {
-        let progress_time: Duration = self.player.get_position()?;
+        let mut progress_time: Duration = self.player.get_position()?;
         let track_length: Duration = match self.player.get_metadata()?.length() {
             Some(d) => d,
             None => Duration::ZERO,
         };
+        // Skip forwards by 15 seconds, ensure that filler time (song beginning) is mostly ignored.
+        // Worse to be too late than too early!
+        progress_time += Duration::from_secs(15);
         Ok([progress_time, track_length])
     }
 }

@@ -1,4 +1,5 @@
 use crate::utils;
+use deunicode;
 use reqwest;
 use scraper::{Html, Selector};
 
@@ -31,7 +32,13 @@ pub fn build_url(artists: Vec<String>, song: &str, all_artists: bool) -> String 
     let mut song_cleaned: Vec<char> = Vec::with_capacity(song_fmt.len());
     for c in song_fmt.chars() {
         if c.is_alphanumeric() || (c == '-') {
-            song_cleaned.push(c);
+            let converted_char: &str = match deunicode::deunicode_char(c) {
+                Some(c) => c,
+                None => {
+                    continue;
+                }
+            };
+            song_cleaned.push(converted_char.chars().next().unwrap()); // If this is some weird, unexpected character, let's crash!
         }
     }
     let song_fmt: String = song_cleaned.iter().cloned().collect();
