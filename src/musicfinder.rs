@@ -1,4 +1,8 @@
+use bytes::Bytes;
 use core::time::Duration;
+use gtk4::gdk_pixbuf::Pixbuf;
+use gtk4::gdk_pixbuf::{PixbufLoader, prelude::PixbufLoaderExt};
+use gtk4::glib;
 use mpris::{self, DBusError, FindingError};
 
 pub struct Song {
@@ -17,6 +21,19 @@ impl Song {
 
 pub struct MprisReader {
     player: mpris::Player,
+}
+
+impl Clone for MprisReader {
+    fn clone(&self) -> Self {
+        let newer: MprisReader = match Self::new() {
+            Ok(n) => n,
+            Err(e) => {
+                panic!("Failed to create new MPRIS reader: {}", e);
+            }
+        };
+        assert_eq!(newer.get_player_name(), self.get_player_name());
+        newer
+    }
 }
 
 impl MprisReader {
@@ -80,5 +97,33 @@ impl MprisReader {
         // Worse to be too late than too early!
         progress_time += Duration::from_secs(15);
         Ok([progress_time, track_length])
+    }
+
+    pub fn get_cover_art(&self) -> Option<Pixbuf> {
+        let fetched_meta = match self.player.get_metadata() {
+            Ok(m) => m,
+            Err(_) => {
+                return None;
+            }
+        };
+        let response: Bytes = match fetched_meta.art_url() {
+            Some(f) => reqwest::blocking::get(f)
+                .expect("Failed to get response from MPRIS-provided web URL")
+                .bytes()
+                .expect("Non-empty body expected"),
+            None => {
+                return None;
+            }
+        };
+
+        let loader = PixbufLoader::new();
+        let glib_response = glib::Bytes::from(&response[..]);
+        loader
+            .write_bytes(&glib_response)
+            .expect("Failed to write bytes");
+        loader.close().expect("Failed to close buffer");
+        let pixbuf: Pixbuf = loader.pixbuf().expect("Failed to create pixbuf");
+
+        Some(pixbuf)
     }
 }

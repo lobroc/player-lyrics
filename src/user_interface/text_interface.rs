@@ -1,3 +1,8 @@
+//!
+//! Text-only, simple interface, which prints line-by-line to the terminal.
+//! For more sophisticated visualisation, check [the TUI interface](./tui_interface.rs) or [the GTK interface](./gtk_interface.rs)
+//!
+
 use mpris::DBusError;
 
 use crate::{
@@ -19,14 +24,12 @@ impl UserInterface for TextInterface {
     }
 
     fn display_song(&self, song_info: &Song, artists: &Vec<String>) -> Result<String, DBusError> {
-        /*
-         * Prints song information, and returns song title.
-         */
         let mut playing_status_str: String =
             format!("Now playing: {} by {}", song_info.title, song_info.artist);
         for a in artists[1..].iter() {
             playing_status_str.push_str(&format!("and {}", a));
         }
+        println!("{}", playing_status_str);
         Ok(song_info.title.clone())
     }
 

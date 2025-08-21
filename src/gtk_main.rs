@@ -3,38 +3,64 @@ mod musicfinder;
 mod user_interface;
 mod utils;
 
+use gtk4::glib::{self, idle_add_local, timeout_add_seconds_local};
 use musicfinder::{MprisReader, Song};
 use std::error::Error;
 use std::time::Duration;
 
-use crate::user_interface::text_interface::TextInterface;
+use crate::user_interface::gtk_interface::GTKInterface;
 use crate::user_interface::user_interface::UserInterface;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<glib::ExitCode, Box<dyn Error>> {
     let mr = MprisReader::new()?;
-    let mut iface = TextInterface::new();
-
-    iface.show_player(&mr);
+    let mut iface = GTKInterface::new();
+    let iface_clone: GTKInterface = iface.clone();
 
     let mut last_song = String::new(); // Dummy value
     let mut lyrics = String::new();
 
-    // Infinite loop
-    loop {
-        // Check every 5 seconds
-        std::thread::sleep(Duration::from_secs(1));
-        let songinfo: Song = mr.get_song()?;
+    {
+        // Scoped cloning for submission only
+        let iface_clone2: GTKInterface = iface.clone();
+        let mr_clone2 = mr.clone();
+        idle_add_local(move || {
+            iface_clone2.show_player(&mr_clone2);
+            glib::ControlFlow::Break
+        });
+    }
+
+    // Infinite loop, called every second
+    timeout_add_seconds_local(1, move || {
+        let songinfo: Song = match mr.get_song() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error: {e:}");
+                return glib::ControlFlow::Break;
+            }
+        };
 
         if songinfo.title == "Up next" {
-            continue;
+            return glib::ControlFlow::Continue;
         }
 
         if last_song != songinfo.title {
             iface.clear();
 
-            let artists: Vec<String> = mr.get_all_artists()?;
+            let artists: Vec<String> = match mr.get_all_artists() {
+                Ok(a) => a,
+                Err(e) => {
+                    eprintln!("Error: {e:}");
+                    return glib::ControlFlow::Break;
+                }
+            };
 
-            last_song = iface.display_song(&songinfo, &artists)?;
+            last_song = match iface.display_song(&songinfo, &artists, &mr) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Error: {e:}");
+                    return glib::ControlFlow::Break;
+                }
+            };
 
             let url: String = geniusgetter::build_url(artists.clone(), &songinfo.title, false);
             println!("Getting lyrics from: {}", url);
@@ -48,19 +74,25 @@ fn main() -> Result<(), Box<dyn Error>> {
                         Ok(lyr) => lyr,
                         Err(e) => {
                             eprintln!("Extraction failed again. Giving up. Error: {e:}");
-                            continue;
+                            return glib::ControlFlow::Continue;
                         }
                     }
                 }
             };
-            println!("Lyrics:");
+            iface.append_text_to_ui("Lyrics:");
         } else {
             if lyrics.is_empty() {
-                continue;
+                return glib::ControlFlow::Continue;
             }
 
             // Here, we update current lyrics
-            let [playback_pos, length] = mr.song_progress()?;
+            let [playback_pos, length] = match mr.song_progress() {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("Error: {e:}");
+                    return glib::ControlFlow::Break;
+                }
+            };
             let verses: Vec<&str> = lyrics.lines().collect();
             let verses_cleaned: Vec<String> = utils::genius_lyrics_cleaner(verses);
             let verses_cleaned_slice: Vec<&str> =
@@ -81,5 +113,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
             iface.display_verse(&verses_cleaned_slice, position);
         }
-    }
+        glib::ControlFlow::Continue
+    });
+
+    eprintln!("Launching iface!");
+    iface_clone.launch();
+
+    Ok(glib::ExitCode::new(0))
 }

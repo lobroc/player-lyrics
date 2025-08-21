@@ -25,6 +25,7 @@ impl std::error::Error for ExtractionError {}
 pub fn build_url(artists: Vec<String>, song: &str, all_artists: bool) -> String {
     // Song needs to be all lower-case, and spaces turned to dashes
     let song_fmt: String = song.to_lowercase().replace(" ", "-");
+    let song_fmt: String = song_fmt.to_lowercase().replace("$", ""); // $ are weird edge-case
     // Also need to remove anything between parentheses or brackets (find them, then delete what's between)
     let song_fmt: String = utils::remove_between(&song_fmt, '(', ')');
     let song_fmt: String = utils::remove_between(&song_fmt, '[', ']');
@@ -87,10 +88,17 @@ pub fn get_lyrics(url: &str) -> Result<String, ExtractionError> {
         lyrics.push_str(&element.text().collect::<Vec<_>>().join("\n"));
         lyrics.push('\n');
     }
-    let bloat_words: [&str; 4] = ["Contributors", "Translations", "Lyrics", "[Intro]"]; // The are words that mark we are still in the preamble
+    let bloat_words: [&str; 6] = [
+        "Read More",
+        "Contributors",
+        "Translations",
+        "Lyrics",
+        "[Intro]",
+        "Lyrics:",
+    ]; // The are words that mark we are still in the preamble
     for w in bloat_words {
         lyrics = match lyrics.find(w) {
-            Some(idx) => lyrics[idx..].to_string(),
+            Some(idx) => lyrics[(idx + w.len())..].to_string(),
             None => lyrics,
         };
     }
